@@ -1,0 +1,8 @@
+{
+  "server": "localhost\\SQLEXPRESS",
+  "database": "SupermarketDB",
+  "auth": "windows",
+  "username": "",
+  "save_password": false,
+  "password": ""
+}
