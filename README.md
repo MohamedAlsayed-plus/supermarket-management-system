@@ -77,6 +77,15 @@ demo/
 └── README.md
 ```
 
+## بناء نسخة Windows (.exe)
+
+لا يدعم PyInstaller البناء المتبادل (cross-compile) من Linux؛ لذلك البناء يجب أن يتم على Windows. طريقتان:
+
+- **تلقائيًا:** كل `push` على `main` يشغّل `.github/workflows/build-windows.yml` على جهاز `windows-latest`. بعد اكتماله حمّل الأرتفاع (artifact) باسم `SupermarketDB-windows` من تبويب **Actions** في GitHub، ثم شغّل `SupermarketDB.exe` من داخل المجلد.
+- **محليًا:** على Windows شغّل `build_windows.bat`. النتيجة في `dist\SupermarketDB\SupermarketDB.exe`.
+
+النسخة المبنية تتضمّن `sql/SupermarketDB.sql`، لكنها لا تتضمّن برنامج ODBC؛ يجب تثبيت ODBC Driver 17/18 على جهاز المستخدم. تُحفظ إعدادات الاتصال في `%APPDATA%\SupermarketDB\config.json`.
+
 ## استكشاف الأخطاء
 
 | المشكلة | الحل |

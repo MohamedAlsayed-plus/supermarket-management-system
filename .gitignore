@@ -11,4 +11,3 @@ config.json
 .DS_Store
 build/
 dist/
-*.spec
