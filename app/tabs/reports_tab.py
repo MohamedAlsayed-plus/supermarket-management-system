@@ -1,91 +1,50 @@
-"""تبويب التقارير: المبيعات مع الفلاتر وتفاصيل الفواتير + تقرير المخزون."""
+"""تبويب التقارير: المبيعات، المخزون، ورسوم بيانية."""
 
 from __future__ import annotations
 
-from datetime import date, datetime
 from decimal import Decimal
-from typing import Any, Sequence
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QStandardItem, QStandardItemModel
+from PySide6.QtCharts import QBarCategoryAxis, QBarSeries, QBarSet, QChart, QChartView, QValueAxis
+from PySide6.QtGui import QPainter
 from PySide6.QtWidgets import (
-    QAbstractItemView,
     QCheckBox,
     QComboBox,
     QDateEdit,
     QHBoxLayout,
-    QHeaderView,
     QLabel,
-    QPushButton,
-    QTableView,
     QTabWidget,
     QVBoxLayout,
     QWidget,
 )
 
 from app import repository as repo
-from app.db import Database, friendly_error
-from app.formatting import date_time, money
+from app.db import friendly_error
+from app.formatting import money
 from app.rtl import apply_rtl, ask_confirm, show_error, show_info, show_warning
+from app.tabs.table_utils import fill, make_table
+from app.theme import make_button
 
-
-def _make_table(headers: Sequence[str]) -> tuple[QTableView, QStandardItemModel]:
-    model = QStandardItemModel(0, len(headers))
-    model.setHorizontalHeaderLabels(list(headers))
-    table = QTableView()
-    table.setModel(model)
-    table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-    table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-    table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
-    table.setAlternatingRowColors(True)
-    table.verticalHeader().setVisible(False)
-    header = table.horizontalHeader()
-    header.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
-    if headers:
-        header.setSectionResizeMode(len(headers) - 1, QHeaderView.ResizeMode.Stretch)
-    return table, model
-
-
-def _display(value: Any) -> str:
-    if isinstance(value, (Decimal, float)):
-        return money(value)
-    if isinstance(value, (datetime, date)):
-        return date_time(value)
-    return str(value or "")
-
-
-def _fill(model: QStandardItemModel, rows: Sequence[Sequence[Any]]) -> None:
-    model.setRowCount(0)
-    for row in rows:
-        cells = []
-        for value in row:
-            cell = QStandardItem(_display(value))
-            cell.setEditable(False)
-            cell.setTextAlignment(
-                Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
-            )
-            cells.append(cell)
-        model.appendRow(cells)
+PAYMENT_LABELS = {"cash": "نقدي", "card": "بطاقة", "credit": "آجل"}
 
 
 class ReportsTab(QTabWidget):
-    def __init__(self, database: Database, parent: QWidget | None = None) -> None:
+    def __init__(self, database, user=None, parent=None):  # noqa: ANN001
         super().__init__(parent)
         self.db = database
+        self.user = user or {}
         self._sale_ids: list[int] = []
         self.addTab(self._build_sales_tab(), "المبيعات")
         self.addTab(self._build_stock_tab(), "المخزون")
+        self.addTab(self._build_charts_tab(), "الرسوم البيانية")
         self.currentChanged.connect(self._on_tab_changed)
         apply_rtl(self)
         self.refresh()
 
     # ------------------------------------------------------------------
-    # فاتورة/مبيعات
-    # ------------------------------------------------------------------
     def _build_sales_tab(self) -> QWidget:
         widget = QWidget()
         layout = QVBoxLayout(widget)
-
         filters = QHBoxLayout()
         self.date_from = QDateEdit()
         self.date_to = QDateEdit()
@@ -95,10 +54,8 @@ class ReportsTab(QTabWidget):
         self.date_from.setDate(self.date_from.date().addDays(-30))
         self.customer_filter = QComboBox()
         self.customer_filter.addItem("كل العملاء", None)
-        refresh_button = QPushButton("تحديث")
-        refresh_button.clicked.connect(self.refresh)
-        delete_button = QPushButton("حذف الفاتورة")
-        delete_button.clicked.connect(self._delete_sale)
+        refresh_button = make_button(self, "تحديث", "refresh", self.refresh)
+        delete_button = make_button(self, "حذف الفاتورة", "delete", self._delete_sale)
         filters.addWidget(QLabel("من:"))
         filters.addWidget(self.date_from)
         filters.addWidget(QLabel("إلى:"))
@@ -111,16 +68,14 @@ class ReportsTab(QTabWidget):
 
         self.summary_label = QLabel("")
         layout.addWidget(self.summary_label)
-
-        self.sales_table, self.sales_model = _make_table(
-            ["رقم الفاتورة", "التاريخ", "العميل", "الإجمالي"]
+        self.sales_table, self.sales_model = make_table(
+            ["رقم الفاتورة", "التاريخ", "العميل", "الدفع", "المستخدم", "الإجمالي"]
         )
         self.sales_table.clicked.connect(self._load_sale_details)
         layout.addWidget(self.sales_table, 2)
-
         layout.addWidget(QLabel("تفاصيل الفاتورة المحددة:"))
-        self.details_table, self.details_model = _make_table(
-            ["المنتج", "الكمية", "سعر الوحدة", "الإجمالي"]
+        self.details_table, self.details_model = make_table(
+            ["المنتج", "الكمية", "سعر الوحدة", "الإجمالي", "المُرجَع"]
         )
         layout.addWidget(self.details_table, 1)
         return widget
@@ -129,18 +84,29 @@ class ReportsTab(QTabWidget):
         widget = QWidget()
         layout = QVBoxLayout(widget)
         controls = QHBoxLayout()
-        self.low_stock_check = QCheckBox("المخزون المنخفض فقط (10 أو أقل)")
+        self.low_stock_check = QCheckBox("المنتجات التي وصلت لحد إعادة الطلب")
         self.low_stock_check.stateChanged.connect(self.refresh_stock)
-        stock_refresh = QPushButton("تحديث المخزون")
-        stock_refresh.clicked.connect(self.refresh_stock)
         controls.addWidget(self.low_stock_check)
         controls.addStretch(1)
-        controls.addWidget(stock_refresh)
+        controls.addWidget(make_button(self, "تحديث المخزون", "refresh", self.refresh_stock))
         layout.addLayout(controls)
-        self.stock_table, self.stock_model = _make_table(
-            ["الرقم", "المنتج", "الصنف", "السعر", "الكمية", "الباركود"]
+        self.stock_table, self.stock_model = make_table(
+            ["الرقم", "المنتج", "الصنف", "السعر", "التكلفة", "الكمية", "حد الطلب", "الباركود"]
         )
         layout.addWidget(self.stock_table)
+        return widget
+
+    def _build_charts_tab(self) -> QWidget:
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        self.sales_chart_view = QChartView()
+        self.sales_chart_view.setRenderHint(QPainter.RenderHint.Antialiasing)
+        self.products_chart_view = QChartView()
+        self.products_chart_view.setRenderHint(QPainter.RenderHint.Antialiasing)
+        layout.addWidget(QLabel("مبيعات آخر 7 أيام"))
+        layout.addWidget(self.sales_chart_view, 1)
+        layout.addWidget(QLabel("المنتجات الأكثر مبيعًا"))
+        layout.addWidget(self.products_chart_view, 1)
         return widget
 
     def _on_tab_changed(self, index: int) -> None:
@@ -148,13 +114,15 @@ class ReportsTab(QTabWidget):
             self.refresh()
         elif index == 1:
             self.refresh_stock()
+        elif index == 2:
+            self.refresh_charts()
 
     def showEvent(self, event) -> None:  # noqa: ANN001 - توقيع Qt
         super().showEvent(event)
         self.refresh()
+        if self.currentIndex() == 2:
+            self.refresh_charts()
 
-    # ------------------------------------------------------------------
-    # بيانات
     # ------------------------------------------------------------------
     def refresh(self) -> None:
         try:
@@ -163,13 +131,10 @@ class ReportsTab(QTabWidget):
             self.customer_filter.clear()
             self.customer_filter.addItem("كل العملاء", None)
             for row in customers:
-                self.customer_filter.addItem(
-                    str(row["CustomerName"]), int(row["CustomerID"])
-                )
+                self.customer_filter.addItem(str(row["CustomerName"]), int(row["CustomerID"]))
             index = self.customer_filter.findData(current_customer)
             if index >= 0:
                 self.customer_filter.setCurrentIndex(index)
-
             sales = repo.list_sales(
                 self.db,
                 customer_id=self.customer_filter.currentData(),
@@ -179,16 +144,14 @@ class ReportsTab(QTabWidget):
         except Exception as exc:
             show_error(self, friendly_error(exc))
             return
-
         self._sale_ids = [int(row["SaleID"]) for row in sales]
-        _fill(
+        fill(
             self.sales_model,
             [
                 [
-                    row["SaleID"],
-                    row["SaleDate"],
-                    row["CustomerName"],
-                    row["Total"],
+                    row["SaleID"], row["SaleDate"], row["CustomerName"],
+                    PAYMENT_LABELS.get(str(row["PaymentMethod"]), row["PaymentMethod"]),
+                    row["UserName"], row["Total"],
                 ]
                 for row in sales
             ],
@@ -205,38 +168,78 @@ class ReportsTab(QTabWidget):
         except Exception as exc:
             show_error(self, friendly_error(exc))
             return
-        _fill(
+        fill(
             self.stock_model,
             [
                 [
-                    row["ProductID"],
-                    row["ProductName"],
-                    row["CategoryName"],
-                    row["Price"],
-                    row["Quantity"],
-                    row["Barcode"],
+                    row["ProductID"], row["ProductName"], row["CategoryName"],
+                    row["Price"], row["CostPrice"], row["Quantity"],
+                    row["MinQuantity"], row["Barcode"],
                 ]
                 for row in rows
             ],
         )
 
-    def _load_sale_details(self, index) -> None:  # noqa: ANN001 - توقيع Qt
-        if not index.isValid() or index.row() >= len(self._sale_ids):
-            return
-        sale_id = self._sale_ids[index.row()]
+    def refresh_charts(self) -> None:
         try:
-            lines = repo.get_sale_details(self.db, sale_id)
+            by_day = repo.sales_by_day(self.db, 7)
+            top = repo.top_products(self.db, 5)
         except Exception as exc:
             show_error(self, friendly_error(exc))
             return
-        _fill(
+        self.sales_chart_view.setChart(
+            self._bar_chart(
+                "مبيعات آخر 7 أيام",
+                [str(row["SaleDay"]) for row in by_day],
+                [float(row["Total"]) for row in by_day],
+                "القيمة",
+            )
+        )
+        self.products_chart_view.setChart(
+            self._bar_chart(
+                "المنتجات الأكثر مبيعًا",
+                [str(row["ProductName"]) for row in top],
+                [float(row["QuantitySold"]) for row in top],
+                "الكمية",
+            )
+        )
+
+    @staticmethod
+    def _bar_chart(title: str, categories: list[str], values: list[float], axis: str) -> QChart:
+        series = QBarSeries()
+        bar_set = QBarSet(axis)
+        for value in values:
+            bar_set.append(value)
+        series.append(bar_set)
+        chart = QChart()
+        chart.addSeries(series)
+        chart.setTitle(title)
+        chart.setAnimationEnabled(True)
+        chart.legend().setVisible(False)
+        names = QBarCategoryAxis()
+        names.append(categories)
+        chart.addAxis(names, Qt.AlignmentFlag.AlignBottom)
+        series.attachAxis(names)
+        numbers = QValueAxis()
+        numbers.setMin(0)
+        chart.addAxis(numbers, Qt.AlignmentFlag.AlignLeft)
+        series.attachAxis(numbers)
+        return chart
+
+    def _load_sale_details(self, index) -> None:  # noqa: ANN001
+        if not index.isValid() or index.row() >= len(self._sale_ids):
+            return
+        try:
+            lines = repo.get_sale_details(self.db, self._sale_ids[index.row()])
+        except Exception as exc:
+            show_error(self, friendly_error(exc))
+            return
+        fill(
             self.details_model,
             [
                 [
-                    line["ProductName"],
-                    line["QuantitySold"],
-                    line["UnitPrice"],
-                    line["LineTotal"],
+                    line["ProductName"], line["QuantitySold"], line["UnitPrice"],
+                    line["LineTotal"], line["ReturnedQty"],
                 ]
                 for line in lines
             ],

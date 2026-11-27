@@ -4,5 +4,6 @@
   "auth": "windows",
   "username": "",
   "save_password": false,
-  "password": ""
+  "password": "",
+  "theme": "light"
 }

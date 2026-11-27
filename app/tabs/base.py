@@ -12,7 +12,6 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
     QLabel,
-    QPushButton,
     QTableView,
     QVBoxLayout,
     QWidget,
@@ -21,14 +20,21 @@ from PySide6.QtWidgets import (
 from app.db import Database, friendly_error
 from app.formatting import money
 from app.rtl import apply_rtl, show_error
+from app.theme import make_button
 
 
 class TableTab(QWidget):
     headers: Sequence[str] = ()
 
-    def __init__(self, database: Database, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        database: Database,
+        user: dict[str, Any] | None = None,
+        parent: QWidget | None = None,
+    ) -> None:
         super().__init__(parent)
         self.db = database
+        self.user = user or {}
 
         layout = QVBoxLayout(self)
         self.toolbar = QHBoxLayout()
@@ -60,14 +66,10 @@ class TableTab(QWidget):
         self.refresh()
 
     def _add_default_buttons(self) -> None:
-        self.add_button = QPushButton("إضافة")
-        self.edit_button = QPushButton("تعديل")
-        self.delete_button = QPushButton("حذف")
-        self.refresh_button = QPushButton("تحديث")
-        self.add_button.clicked.connect(self.add_item)
-        self.edit_button.clicked.connect(self.edit_item)
-        self.delete_button.clicked.connect(self.delete_item)
-        self.refresh_button.clicked.connect(self.refresh)
+        self.add_button = make_button(self, "إضافة", "add", self.add_item)
+        self.edit_button = make_button(self, "تعديل", "edit", self.edit_item)
+        self.delete_button = make_button(self, "حذف", "delete", self.delete_item)
+        self.refresh_button = make_button(self, "تحديث", "refresh", self.refresh)
         for button in (
             self.add_button,
             self.edit_button,

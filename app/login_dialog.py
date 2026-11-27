@@ -11,7 +11,6 @@ from PySide6.QtWidgets import (
     QFormLayout,
     QHBoxLayout,
     QLineEdit,
-    QPushButton,
     QVBoxLayout,
 )
 
@@ -24,6 +23,7 @@ from app.db import (
     test_connection,
 )
 from app.rtl import apply_rtl, ask_confirm, show_error, show_info, show_warning
+from app.theme import make_button
 
 
 class LoginDialog(QDialog):
@@ -75,15 +75,11 @@ class LoginDialog(QDialog):
         form.addRow(self.save_password_check)
 
         buttons = QHBoxLayout()
-        test_button = QPushButton("اختبار الاتصال")
-        test_button.clicked.connect(self._test_connection)
-        init_button = QPushButton("تهيئة قاعدة البيانات")
-        init_button.clicked.connect(self._initialize_database)
-        ok_button = QPushButton("اتصال")
+        test_button = make_button(self, "اختبار الاتصال", "check", self._test_connection)
+        init_button = make_button(self, "تهيئة قاعدة البيانات", "database", self._initialize_database)
+        ok_button = make_button(self, "اتصال", "key", self.accept)
         ok_button.setDefault(True)
-        ok_button.clicked.connect(self.accept)
-        cancel_button = QPushButton("إلغاء")
-        cancel_button.clicked.connect(self.reject)
+        cancel_button = make_button(self, "إلغاء", "close", self.reject)
         buttons.addWidget(test_button)
         buttons.addWidget(init_button)
         buttons.addWidget(ok_button)
@@ -132,7 +128,7 @@ class LoginDialog(QDialog):
     def _initialize_database(self) -> None:
         if not ask_confirm(
             self,
-            "تحذير: سيتم حذف الجداول الخمسة وإعادة إنشائها بالبيانات التجريبية.\n"
+            "تحذير: سيتم حذف جميع الجداول وإعادة إنشائها بالبيانات التجريبية.\n"
             "أي بيانات موجودة حاليًا ستُحذف. هل تريد المتابعة؟",
             "تهيئة قاعدة البيانات",
         ):

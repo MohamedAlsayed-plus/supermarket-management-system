@@ -20,7 +20,20 @@ PREFERRED_DRIVERS = (
     "SQL Server Native Client 11.0",
 )
 
-REQUIRED_TABLES = ("Categories", "Products", "Customers", "Sales", "SaleDetails")
+REQUIRED_TABLES = (
+    "Users",
+    "Categories",
+    "Suppliers",
+    "Products",
+    "Customers",
+    "Sales",
+    "SaleDetails",
+    "Purchases",
+    "PurchaseDetails",
+    "SalesReturns",
+    "ReturnDetails",
+    "StockMovements",
+)
 
 
 class DatabaseError(Exception):

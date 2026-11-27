@@ -1,4 +1,4 @@
-"""تبويب المنتجات: CRUD + بحث بالاسم أو الصنف أو الباركود."""
+"""تبويب المنتجات: CRUD + بحث + حد إعادة الطلب وسعر التكلفة."""
 
 from __future__ import annotations
 
@@ -10,7 +10,6 @@ from PySide6.QtWidgets import (
     QFormLayout,
     QHBoxLayout,
     QLineEdit,
-    QPushButton,
     QSpinBox,
 )
 
@@ -21,7 +20,13 @@ from app.tabs.base import TableTab
 
 
 class ProductsTab(TableTab):
-    headers = ("الرقم", "اسم المنتج", "الصنف", "السعر", "الكمية", "الباركود")
+    headers = (
+        "الرقم", "اسم المنتج", "الصنف", "السعر", "التكلفة",
+        "الكمية", "حد الطلب", "الباركود",
+    )
+
+    def __init__(self, database, user=None, parent=None):  # noqa: ANN001
+        super().__init__(database, user, parent)
 
     def _build_toolbar(self, toolbar: QHBoxLayout) -> None:
         self.search_edit = QLineEdit()
@@ -34,12 +39,9 @@ class ProductsTab(TableTab):
     def rows(self):
         return [
             [
-                row["ProductID"],
-                row["ProductName"],
-                row["CategoryName"],
-                row["Price"],
-                row["Quantity"],
-                row["Barcode"],
+                row["ProductID"], row["ProductName"], row["CategoryName"],
+                row["Price"], row["CostPrice"], row["Quantity"],
+                row["MinQuantity"], row["Barcode"],
             ]
             for row in repo.list_products(self.db, self.search_edit.text().strip())
         ]
@@ -100,18 +102,31 @@ class ProductsTab(TableTab):
         price_edit.setValue(float(row.get("Price") or 0))
         keep_numbers_ltr(price_edit)
 
+        cost_edit = QDoubleSpinBox()
+        cost_edit.setDecimals(2)
+        cost_edit.setRange(0, 1_000_000)
+        cost_edit.setValue(float(row.get("CostPrice") or 0))
+        keep_numbers_ltr(cost_edit)
+
         quantity_edit = QSpinBox()
         quantity_edit.setRange(0, 1_000_000)
         quantity_edit.setValue(int(row.get("Quantity") or 0))
         keep_numbers_ltr(quantity_edit)
+
+        min_edit = QSpinBox()
+        min_edit.setRange(0, 1_000_000)
+        min_edit.setValue(int(row.get("MinQuantity") or 0))
+        keep_numbers_ltr(min_edit)
 
         barcode_edit = QLineEdit(str(row.get("Barcode") or ""))
         barcode_edit.setPlaceholderText("اختياري - يجب أن يكون فريدًا")
 
         form.addRow("اسم المنتج:", name_edit)
         form.addRow("الصنف:", category_combo)
-        form.addRow("السعر:", price_edit)
+        form.addRow("سعر البيع:", price_edit)
+        form.addRow("سعر التكلفة:", cost_edit)
         form.addRow("الكمية:", quantity_edit)
+        form.addRow("حد إعادة الطلب:", min_edit)
         form.addRow("الباركود:", barcode_edit)
 
         buttons = QDialogButtonBox(
@@ -124,14 +139,16 @@ class ProductsTab(TableTab):
 
         if dialog.exec() != QDialog.Accepted:
             return
+        values = (
+            name_edit.text(),
+            category_combo.currentData(),
+            price_edit.value(),
+            cost_edit.value(),
+            quantity_edit.value(),
+            min_edit.value(),
+            barcode_edit.text(),
+        )
         try:
-            values = (
-                name_edit.text(),
-                category_combo.currentData(),
-                price_edit.value(),
-                quantity_edit.value(),
-                barcode_edit.text(),
-            )
             if product_id is None:
                 repo.add_product(self.db, *values)
             else:

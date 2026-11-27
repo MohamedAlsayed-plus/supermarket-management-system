@@ -34,6 +34,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "username": "",
     "save_password": False,
     "password": "",
+    "theme": "light",  # "light" أو "dark"
 }
 
 

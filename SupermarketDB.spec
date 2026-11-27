@@ -9,8 +9,11 @@ a = Analysis(
     ["app/main.py"],
     pathex=[str(Path.cwd())],
     binaries=[],
-    datas=[("sql/SupermarketDB.sql", "sql")],
-    hiddenimports=[],
+    datas=[
+        ("sql/SupermarketDB.sql", "sql"),
+        ("app/icons/*.svg", "app/icons"),
+    ],
+    hiddenimports=["PySide6.QtCharts", "PySide6.QtSvg"],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

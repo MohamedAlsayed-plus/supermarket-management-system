@@ -18,6 +18,9 @@ from app.tabs.base import TableTab
 class CategoriesTab(TableTab):
     headers = ("الرقم", "اسم الصنف")
 
+    def __init__(self, database, user=None, parent=None):  # noqa: ANN001
+        super().__init__(database, user, parent)
+
     def rows(self):
         return [
             [row["CategoryID"], row["CategoryName"]]
